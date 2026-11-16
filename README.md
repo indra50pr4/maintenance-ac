@@ -65,12 +65,17 @@ A modern, responsive, and full-featured Web Application designed for HVAC contra
 - Professional **Surat Bukti Servis / Work Order Slip** modal formatted for standard printing (`Ctrl+P`).
 - Includes company header, asset specifications, technician and vendor info, complete scope of work, technical parameters table, total costs, notes, and dual-signature boxes (Lead Technician & Facility Supervisor).
 
-### 6. 💾 Zero-Setup Storage, Backup & Cloud Sync
-- **Local Persistence**: Works out of the box with zero server configuration using `localStorage`.
-- **Pre-loaded Demo Building Data**: Pre-configured with realistic office, boardroom, cafeteria, and server room AC units so you can test immediately.
-- **One-Click JSON Backup & Restore**: Download full database backup or restore onto any phone, tablet, or PC.
-- **Export to CSV**: Export both AC Units and Service History to Excel-compatible CSV files.
-- **Optional Google Sheets Sync**: Connect directly to Google Sheets using the included Google Apps Script backend (`google-apps-script/Code.gs`).
+### 6. ⚡ Multi-Platform Real-Time Cloud Synchronization
+- **Update Otomatis di Seluruh Perangkat**: Saat salah satu perangkat (misal HP teknisi A di lapangan) menambah unit AC, mengedit data, atau menyimpan log service, semua perangkat lain (HP teknisi B, tablet supervisor, laptop admin kantor) **langsung ter-update otomatis secara serentak**.
+- **Opsi 1: Firebase Realtime Database (Update Seketika < 0.5 Detik)**:
+  - Menggunakan WebSocket push dari Google Firebase.
+  - Perangkat lain langsung menerima pembaruan secara instan tanpa perlu refresh halaman!
+  - 100% Gratis di paket Firebase Spark (tanpa kartu kredit).
+- **Opsi 2: Google Sheets Two-Way Auto-Sync**:
+  - Menyimpan data langsung ke spreadsheet Google Sheets (Google Drive).
+  - Sinkronisasi dua arah otomatis setiap 25 detik dan saat aplikasi dibuka kembali.
+- **Offline First**: Tetap dapat bekerja normal meski tidak ada sinyal Wi-Fi di basement/rooftop (data tersimpan di `localStorage`). Saat internet kembali aktif, perubahan otomatis disinkronkan ke cloud.
+- **Indikator Status Cloud di Header**: Menampilkan status koneksi (`🟢 Terhubung`, `🟡 Menyinkronkan`, `⚪ Offline`) dan tombol cepat **Sync Now**.
 
 ---
 
@@ -82,34 +87,48 @@ Simply open `index.html` in any modern web browser (Google Chrome, Microsoft Edg
 2. The application will launch with sample units and service logs already loaded.
 3. Everything runs locally in your browser.
 
-### Option 2: Run with Local Web Server
-If you wish to test camera QR scanning on mobile devices over local Wi-Fi:
-```powershell
-# Using Python (if installed)
-python -m http.server 8080
+---
 
-# Or using Node / npx
-npx serve .
-```
-Then navigate to `http://localhost:8080` (or your local IP on your mobile phone).
+## ⚡ Panduan Setup Sinkronisasi Cloud Antar Perangkat
+
+Pilih salah satu metode di bawah ini agar data otomatis sinkron di semua HP dan komputer:
+
+### 🌟 Opsi A: Firebase Realtime Database (Update Instan Tanpa Refresh - Rekomendasi)
+1. Buka [console.firebase.google.com](https://console.firebase.google.com) dan login dengan akun Google Anda.
+2. Klik **Add project** (Tambah proyek), beri nama misalnya `coolcare-ac`, lalu klik **Continue** sampai selesai.
+3. Di menu sidebar kiri, klik **Build** > **Realtime Database** > klik **Create Database**.
+   - Pilih lokasi: `Singapore (asia-southeast1)` atau default.
+   - Pilih Security Rules: **Start in test mode** (klik Enable).
+4. Klik ikon gerigi (Project Settings) di pojok kiri atas > tab **General** > scroll ke bawah ke bagian **Your apps** > klik ikon Web (`</>`).
+5. Daftarkan nama app, lalu salin objek `firebaseConfig` yang muncul, contohnya:
+   ```json
+   {
+     "apiKey": "AIzaSy...",
+     "authDomain": "coolcare-ac.firebaseapp.com",
+     "databaseURL": "https://coolcare-ac-default-rtdb.asia-southeast1.firebasedatabase.app",
+     "projectId": "coolcare-ac",
+     "storageBucket": "coolcare-ac.appspot.com",
+     "messagingSenderId": "...",
+     "appId": "..."
+   }
+   ```
+6. Buka aplikasi CoolCare > tab **Settings & Data** > tempelkan JSON tersebut ke kolom **Firebase Config (JSON)** > klik **Uji & Hubungkan Firebase** > klik **Simpan Pengaturan**.
+7. **Selesai!** Sekarang buka link web di HP dan di laptop: saat HP menyimpan data, laptop akan langsung ter-update seketika!
 
 ---
 
-## ☁️ Google Sheets Cloud Sync Setup (Optional)
-
-If you wish to save service records to a Google Sheet in the cloud:
-
-1. Create a new Google Sheet at [sheets.new](https://sheets.new).
-2. Go to **Extensions** > **Apps Script**.
-3. Open `google-apps-script/Code.gs` in this project, copy all its code, and paste it into the Google Apps Script editor.
-4. Click **Deploy** > **New Deployment**:
+### 📊 Opsi B: Google Sheets Two-Way Cloud Sync (Google Drive)
+1. Buat spreadsheet baru di Google Drive melalui [sheets.new](https://sheets.new).
+2. Di Google Sheets, buka menu **Extensions** > **Apps Script**.
+3. Buka file `google-apps-script/Code.gs` di proyek ini, copy seluruh kodenya, dan paste ke editor Apps Script.
+4. Klik **Deploy** > **New Deployment**:
    - **Type**: Web App
    - **Description**: AC Maintenance API
    - **Execute as**: Me
-   - **Who has access**: Anyone
-5. Click **Deploy**, authorize access, and copy the **Web App URL** (e.g. `https://script.google.com/macros/s/.../exec`).
-6. In the CoolCare Web App, navigate to the **Settings & Data** tab, paste your Web App URL into **Google Apps Script Web App URL**, click **Test**, and click **Save Settings**.
-7. Every time a maintenance service is logged, it will automatically append to your Google Sheet!
+   - **Who has access**: **Anyone** *(Penting agar teknisi di HP bisa akses)*
+5. Klik **Deploy**, beri izin akses (*Authorize access*), lalu salin **Web App URL** (berakhiran `/exec`).
+6. Di aplikasi CoolCare, masuk ke tab **Settings & Data**, paste URL tersebut ke kolom **Google Apps Script Web App URL** > klik **Simpan Pengaturan**.
+7. Data akan tersinkronisasi otomatis setiap ada input baru dan di-poll setiap 25 detik ke Google Sheet!
 
 ---
 
@@ -118,6 +137,17 @@ If you wish to save service records to a Google Sheet in the cloud:
 ```
 d:\Maintenance AC\
 ├── index.html                   # Main Single Page Application interface & modals
+├── css\
+│   └── style.css                # Custom styling, dark/light themes, badges & print styles
+├── js\
+│   ├── app.js                   # Application state, calculations, UI renderers, backup/export
+│   ├── cloud-sync.js            # Multi-device cloud sync engine (Firebase & Google Sheets)
+│   ├── charts.js                # Chart.js initialization & dynamic updates
+│   └── qr-manager.js            # QR Code generation, sticker layouts & camera scanner
+├── google-apps-script\
+│   └── Code.gs                  # Full two-way sync Google Apps Script backend
+└── README.md                    # Dokumentasi & panduan lengkap
+```
 ├── css\
 │   └── style.css                # Custom styling, dark/light themes, badge styles & print styles
 ├── js\

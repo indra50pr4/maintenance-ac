@@ -1,44 +1,45 @@
 /**
- * Google Apps Script Backend for AC Maintenance System
+ * Google Apps Script Backend for AC Maintenance System (Full Multi-Device Two-Way Sync)
  * 
- * Instructions:
- * 1. Open Google Sheets (https://sheets.new)
- * 2. Create 2 tabs named: "Units" and "Maintenance_Logs"
- * 3. Go to Extensions > Apps Script
- * 4. Paste this code into Code.gs
- * 5. Click "Deploy" > "New Deployment"
- * 6. Select Type: "Web App"
- * 7. Execute as: "Me", Who has access: "Anyone"
- * 8. Copy the Web App URL and paste it into the Web App Settings > Google Apps Script Webhook URL.
+ * Panduan Setup:
+ * 1. Buka Google Sheets (https://sheets.new)
+ * 2. Masuk ke Extensions > Apps Script
+ * 3. Hapus kode lama, paste seluruh kode ini ke dalam Code.gs
+ * 4. Klik "Deploy" > "New Deployment"
+ * 5. Pilih Type: "Web App"
+ * 6. Execute as: "Me"
+ * 7. Who has access: "Anyone" (Penting agar web app di HP bisa mengakses tanpa login Google)
+ * 8. Klik "Deploy", beri izin (Authorize), lalu salin Web App URL (akhiran /exec).
+ * 9. Tempelkan URL tersebut ke menu Settings di Web App AC Maintenance.
  */
 
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'ping';
   
   if (action === 'ping') {
-    return ContentService.createTextOutput(JSON.stringify({
+    return createJsonResponse({
       status: 'success',
-      message: 'AC Maintenance Apps Script endpoint is online.'
-    })).setMimeType(ContentService.MimeType.JSON);
+      message: 'AC Maintenance Cloud Backend is online.',
+      timestamp: new Date().toISOString()
+    });
   }
 
   if (action === 'getAll') {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const unitsSheet = ss.getSheetByName('Units') || initSheets(ss).unitsSheet;
-    const logsSheet = ss.getSheetByName('Maintenance_Logs') || initSheets(ss).logsSheet;
+    const sheets = initSheets(ss);
+    
+    const unitsData = sheets.unitsSheet.getDataRange().getValues();
+    const logsData = sheets.logsSheet.getDataRange().getValues();
 
-    const unitsData = unitsSheet.getDataRange().getValues();
-    const logsData = logsSheet.getDataRange().getValues();
-
-    return ContentService.createTextOutput(JSON.stringify({
+    return createJsonResponse({
       status: 'success',
       units: formatRows(unitsData),
-      logs: formatRows(logsData)
-    })).setMimeType(ContentService.MimeType.JSON);
+      logs: formatRows(logsData),
+      timestamp: new Date().toISOString()
+    });
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: 'unknown_action' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'unknown_action' });
 }
 
 function doPost(e) {
@@ -46,13 +47,14 @@ function doPost(e) {
     const postData = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const action = postData.action;
+    const sheets = initSheets(ss);
 
+    // 1. Tambah Log Service Maintenance
     if (action === 'addService') {
       const srv = postData.data;
-      const logsSheet = ss.getSheetByName('Maintenance_Logs') || initSheets(ss).logsSheet;
       const m = srv.measurements || {};
 
-      logsSheet.appendRow([
+      sheets.logsSheet.appendRow([
         srv.id || ('SRV-' + new Date().getTime()),
         srv.acId,
         srv.date,
@@ -76,32 +78,99 @@ function doPost(e) {
       ]);
 
       // Update unit last & next service in Units sheet
-      updateUnitServiceDates(ss, srv.acId, srv.date, srv.unitStatusAfter);
+      updateUnitServiceDates(sheets.unitsSheet, srv.acId, srv.date, srv.unitStatusAfter);
 
-      return ContentService.createTextOutput(JSON.stringify({
+      return createJsonResponse({
         status: 'success',
         message: 'Service record logged in Google Sheet successfully'
-      })).setMimeType(ContentService.MimeType.JSON);
+      });
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ignored' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    // 2. Simpan / Perbarui Data Unit AC
+    if (action === 'saveUnit') {
+      const unit = postData.data;
+      saveOrUpdateUnitRow(sheets.unitsSheet, unit);
+      return createJsonResponse({ status: 'success', message: 'Unit saved successfully' });
+    }
+
+    // 3. Hapus Unit AC
+    if (action === 'deleteUnit') {
+      const unitId = postData.data.id;
+      deleteUnitRow(sheets.unitsSheet, unitId);
+      return createJsonResponse({ status: 'success', message: 'Unit deleted successfully' });
+    }
+
+    // 4. Sinkronisasi Keseluruhan (Full Sync)
+    if (action === 'syncAll') {
+      const payload = postData.data;
+      if (payload.units && Array.isArray(payload.units)) {
+        payload.units.forEach(u => saveOrUpdateUnitRow(sheets.unitsSheet, u));
+      }
+      return createJsonResponse({ status: 'success', message: 'All data synchronized successfully' });
+    }
+
+    return createJsonResponse({ status: 'ignored' });
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({
+    return createJsonResponse({
       status: 'error',
       message: err.toString()
-    })).setMimeType(ContentService.MimeType.JSON);
+    });
   }
 }
 
-function updateUnitServiceDates(ss, acId, serviceDate, statusAfter) {
-  const unitsSheet = ss.getSheetByName('Units') || initSheets(ss).unitsSheet;
-  const data = unitsSheet.getDataRange().getValues();
+function saveOrUpdateUnitRow(sheet, unit) {
+  const data = sheet.getDataRange().getValues();
+  let foundRow = -1;
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === unit.id) {
+      foundRow = i + 1;
+      break;
+    }
+  }
+
+  const rowValues = [
+    unit.id,
+    unit.name || '',
+    unit.location || '',
+    unit.floor || '',
+    unit.brand || '',
+    unit.model || '',
+    unit.type || '',
+    unit.capacity || '',
+    unit.refrigerant || 'R32',
+    unit.installDate || '',
+    unit.frequencyMonths || 3,
+    unit.lastServiceDate || '-',
+    unit.nextServiceDate || '',
+    unit.status || 'Normal',
+    unit.serialNumber || '',
+    unit.technicianNotes || ''
+  ];
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
+    sheet.appendRow(rowValues);
+  }
+}
+
+function deleteUnitRow(sheet, unitId) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === unitId) {
+      sheet.deleteRow(i + 1);
+      break;
+    }
+  }
+}
+
+function updateUnitServiceDates(sheet, acId, serviceDate, statusAfter) {
+  const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === acId) {
-      // Column index for Last Service is 11 (L), Status is 13 (N)
-      unitsSheet.getRange(i + 1, 12).setValue(serviceDate.split('T')[0]);
-      unitsSheet.getRange(i + 1, 14).setValue(statusAfter);
+      sheet.getRange(i + 1, 12).setValue(serviceDate.split('T')[0]);
+      sheet.getRange(i + 1, 14).setValue(statusAfter);
       break;
     }
   }
@@ -146,4 +215,9 @@ function formatRows(values) {
     list.push(obj);
   }
   return list;
+}
+
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
 }

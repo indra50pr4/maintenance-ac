@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CoolCare - AC Maintenance & Asset Management</title>
+  <title>Maintenance AC System</title>
   
   <!-- Favicon / Web App Icon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>❄️</text></svg>">
@@ -20,6 +20,10 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
+  <!-- Firebase SDKs for Realtime Multi-Platform Synchronization -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -29,12 +33,20 @@
       <div class="d-flex align-items-center gap-2">
         <span class="fs-4">❄️</span>
         <div>
-          <span class="fw-bold fs-5 tracking-tight">CoolCare</span>
-          <span class="brand-badge ms-1">AC Maintenance</span>
+          <span class="fw-bold fs-5 tracking-tight" id="headerAppTitle">Maintenance AC</span>
+          <span class="brand-badge ms-1" id="headerAppSubtitle">System</span>
         </div>
       </div>
 
       <div class="d-flex align-items-center gap-2">
+        <!-- Live Cloud Sync Indicator & Quick Sync -->
+        <div id="cloudStatusBadge" class="cloud-status-badge badge bg-light text-dark border d-flex align-items-center gap-1 py-1 px-2" style="cursor: pointer;" onclick="document.getElementById('tab-settings').click()" title="Klik untuk membuka pengaturan Cloud Sync">
+          <span class="status-dot dot-gray"></span> <span class="d-none d-sm-inline">Cloud:</span> <span id="cloudStatusText">Offline</span>
+        </div>
+        <button class="btn btn-sm btn-outline-light d-flex align-items-center gap-1" id="syncNowBtn" onclick="CloudSync.syncNow()" title="Sinkronkan Sekarang Antar Perangkat">
+          <i class="bi bi-arrow-repeat" id="syncNowIcon"></i> <span class="d-none d-md-inline">Sync</span>
+        </button>
+
         <button class="btn btn-sm btn-outline-light d-none d-md-flex align-items-center gap-1" id="themeToggleBtn" onclick="App.toggleTheme()">
           <i class="bi bi-moon-stars-fill"></i> Dark Mode
         </button>
@@ -568,19 +580,56 @@
                   <input type="text" id="settingCompanyPhone" class="form-control" placeholder="e.g. +62 21 555-0100">
                 </div>
                 
-                <hr class="my-3">
-                <h6 class="fw-bold mb-2"><i class="bi bi-google text-danger me-1"></i>Google Sheets Sync (Optional)</h6>
-                <p class="text-muted small mb-2">Connect to Google Sheets to sync maintenance logs to the cloud using Google Apps Script.</p>
-                <div class="mb-3">
-                  <label class="form-label small fw-semibold">Google Apps Script Web App URL</label>
-                  <div class="input-group">
-                    <input type="url" id="settingGasUrl" class="form-control" placeholder="https://script.google.com/macros/s/.../exec">
-                    <button type="button" class="btn btn-outline-secondary" onclick="App.testGasConnection()">Test</button>
+                <hr class="my-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <h6 class="fw-bold mb-0 text-primary"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Sinkronisasi Cloud Antar Perangkat</h6>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">Real-Time Sync</span>
+                </div>
+                <p class="text-muted small mb-3">Pilih salah satu metode cloud agar saat teknisi di HP meng-update data, komputer kantor dan seluruh perangkat lainnya langsung otomatis ter-update.</p>
+
+                <!-- Cloud Option A: Firebase Realtime Database (Instant Push) -->
+                <div class="p-3 border rounded bg-body-tertiary mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-bold"><i class="bi bi-fire text-danger me-1"></i>Opsi 1: Firebase Realtime (Update Instan)</span>
+                    <span class="badge bg-primary text-white">Rekomendasi Utama</span>
                   </div>
-                  <div class="form-text small">Script code is provided in <code>google-apps-script/Code.gs</code>.</div>
+                  <div class="text-muted small mb-2">Update instan tanpa jeda (< 0.5 detik). Saat satu HP menyimpan data service/AC, seluruh HP dan PC lain langsung ter-update otomatis tanpa perlu refresh!</div>
+                  <div class="mb-2">
+                    <label class="form-label small fw-semibold">Firebase Config (JSON)</label>
+                    <textarea id="settingFirebaseConfig" class="form-control font-monospace small" rows="3" placeholder='{"apiKey": "...", "databaseURL": "https://...firebaseio.com", "projectId": "..."}'></textarea>
+                    <div class="form-text small">Buat proyek gratis 100% di <a href="https://console.firebase.google.com" target="_blank" class="text-decoration-none">console.firebase.google.com</a> > Realtime Database.</div>
+                  </div>
+                  <button type="button" class="btn btn-outline-primary btn-sm" onclick="App.testFirebaseConnection()">
+                    <i class="bi bi-link-45deg me-1"></i>Uji & Hubungkan Firebase
+                  </button>
                 </div>
 
-                <button type="submit" class="btn btn-primary">Save Settings</button>
+                <!-- Cloud Option B: Google Sheets Two-Way Sync -->
+                <div class="p-3 border rounded bg-body-tertiary mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-bold"><i class="bi bi-file-earmark-spreadsheet-fill text-success me-1"></i>Opsi 2: Google Sheets (Dua Arah & Otomatis)</span>
+                    <span class="badge bg-secondary">Google Drive</span>
+                  </div>
+                  <div class="text-muted small mb-2">Data tersimpan di spreadsheet Google Drive. Otomatis menarik update dari perangkat lain setiap 25 detik dan saat aplikasi dibuka.</div>
+                  <div class="mb-2">
+                    <label class="form-label small fw-semibold">Google Apps Script Web App URL</label>
+                    <div class="input-group input-group-sm">
+                      <input type="url" id="settingGasUrl" class="form-control" placeholder="https://script.google.com/macros/s/.../exec">
+                      <button type="button" class="btn btn-outline-secondary" onclick="App.testGasConnection()">Uji Webhook</button>
+                    </div>
+                    <div class="form-text small">Kode script terbaru ada di folder <code>google-apps-script/Code.gs</code>.</div>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-success btn-sm flex-fill" onclick="CloudSync.pullFromGoogleSheets(true)">
+                      <i class="bi bi-cloud-download me-1"></i>Tarik dari Sheet
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" onclick="CloudSync.pushToGoogleSheets('syncAll', { units: App.units, history: App.history })">
+                      <i class="bi bi-cloud-upload me-1"></i>Kirim Semua ke Sheet
+                    </button>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 fw-semibold"><i class="bi bi-save me-1"></i>Simpan Pengaturan</button>
               </form>
             </div>
           </div>
@@ -779,7 +828,7 @@
           <!-- Slip Header -->
           <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
             <div>
-              <h4 class="fw-bold mb-1 text-primary">❄️ CoolCare AC Maintenance</h4>
+              <h4 class="fw-bold mb-1 text-primary" id="slip-title">❄️ Maintenance AC System</h4>
               <div class="small fw-semibold" id="slip-company">Facility Department</div>
               <div class="text-muted small">Air Conditioning Preventive Maintenance Report</div>
             </div>
@@ -881,6 +930,7 @@
   <!-- Application JS Modules -->
   <script src="js/charts.js"></script>
   <script src="js/qr-manager.js"></script>
+  <script src="js/cloud-sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

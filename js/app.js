@@ -324,6 +324,7 @@ const DEFAULT_SETTINGS = {
   companyAddress: "Jl. Jenderal Sudirman Kav. 21, Jakarta Pusat",
   companyPhone: "+62 21 555-0199",
   gasWebhookUrl: "",
+  firebaseConfig: null,
   lang: "id", // 'id' or 'en'
   darkMode: false
 };
@@ -343,11 +344,34 @@ const App = {
     this.calculateAllStatuses();
     this.applyTheme(this.settings.darkMode);
     this.initEventListeners();
+    this.updateBrandDisplay();
     this.renderDashboard();
     this.renderUnitsList();
     this.renderHistoryTable();
     this.populateLocationFilter();
     this.initQR();
+    if (typeof CloudSync !== 'undefined') {
+      CloudSync.init();
+    }
+  },
+
+  updateBrandDisplay() {
+    const titleEl = document.getElementById('headerAppTitle');
+    const subtitleEl = document.getElementById('headerAppSubtitle');
+    const slipTitleEl = document.getElementById('slip-title');
+    const name = (this.settings.companyName || '').trim();
+
+    if (name) {
+      if (titleEl) titleEl.textContent = name;
+      if (subtitleEl) subtitleEl.textContent = 'AC Maintenance';
+      if (slipTitleEl) slipTitleEl.innerHTML = `❄️ ${name}`;
+      document.title = `${name} - AC Maintenance`;
+    } else {
+      if (titleEl) titleEl.textContent = 'Maintenance AC';
+      if (subtitleEl) subtitleEl.textContent = 'System';
+      if (slipTitleEl) slipTitleEl.innerHTML = '❄️ Maintenance AC System';
+      document.title = 'Maintenance AC System';
+    }
   },
 
   loadState() {
@@ -780,6 +804,11 @@ const App = {
     this.renderUnitsList();
     this.renderDashboard();
 
+    // Multi-device Cloud Sync
+    if (typeof CloudSync !== 'undefined') {
+      CloudSync.pushChange('saveUnit', unitData);
+    }
+
     const modal = bootstrap.Modal.getInstance(document.getElementById('unitModal'));
     if (modal) modal.hide();
 
@@ -810,6 +839,12 @@ const App = {
         this.saveUnits();
         this.renderUnitsList();
         this.renderDashboard();
+        
+        // Multi-device Cloud Sync
+        if (typeof CloudSync !== 'undefined') {
+          CloudSync.pushChange('deleteUnit', id);
+        }
+
         Swal.fire('Deleted!', `AC Unit ${id} has been deleted.`, 'success');
       }
     });
@@ -912,9 +947,9 @@ const App = {
     this.renderUnitsList();
     this.renderHistoryTable();
 
-    // Trigger Cloud Webhook if configured
-    if (this.settings.gasWebhookUrl) {
-      this.syncRecordToGoogleSheet(serviceRecord);
+    // Multi-device Cloud Sync (Push to Firebase & Google Sheet)
+    if (typeof CloudSync !== 'undefined') {
+      CloudSync.pushChange('addService', serviceRecord);
     }
 
     Swal.fire({
@@ -1340,7 +1375,7 @@ const App = {
     });
   },
 
-  // Google Sheets Webhook Sync
+  // Settings Form & Cloud Connections
   saveSettingsForm(e) {
     e.preventDefault();
     this.settings.companyName = document.getElementById('settingCompanyName').value.trim();
@@ -1348,8 +1383,62 @@ const App = {
     this.settings.companyPhone = document.getElementById('settingCompanyPhone').value.trim();
     this.settings.gasWebhookUrl = document.getElementById('settingGasUrl').value.trim();
 
+    const fbText = document.getElementById('settingFirebaseConfig').value.trim();
+    if (fbText) {
+      try {
+        this.settings.firebaseConfig = JSON.parse(fbText);
+      } catch (err) {
+        Swal.fire('Format Firebase Salah', 'Pastikan Firebase Config berupa format JSON yang valid.', 'error');
+        return;
+      }
+    } else {
+      this.settings.firebaseConfig = null;
+    }
+
     this.saveSettings();
-    Swal.fire('Settings Saved', 'System preferences have been updated.', 'success');
+    this.updateBrandDisplay();
+    if (typeof CloudSync !== 'undefined') {
+      CloudSync.init();
+    }
+
+    Swal.fire('Settings Saved', 'Pengaturan sistem & sinkronisasi cloud telah diperbarui.', 'success');
+  },
+
+  async testFirebaseConnection() {
+    const fbText = document.getElementById('settingFirebaseConfig').value.trim();
+    if (!fbText) {
+      Swal.fire('Input Diperlukan', 'Tempelkan Firebase Config (JSON) terlebih dahulu.', 'warning');
+      return;
+    }
+
+    let config;
+    try {
+      config = JSON.parse(fbText);
+      if (!config.databaseURL) {
+        throw new Error('Config harus memiliki properti "databaseURL"');
+      }
+    } catch (e) {
+      Swal.fire('JSON Tidak Valid', e.message || 'Format JSON salah.', 'error');
+      return;
+    }
+
+    Swal.fire({
+      title: 'Menghubungkan ke Firebase...',
+      text: 'Menguji koneksi Realtime Database',
+      allowOutsideClick: false,
+      didOpen: () => { Swal.showLoading(); }
+    });
+
+    try {
+      this.settings.firebaseConfig = config;
+      this.saveSettings();
+      CloudSync.initFirebase(config);
+      setTimeout(() => {
+        Swal.fire('Berhasil Terhubung!', 'Aplikasi sukses terhubung dengan Firebase Realtime Database. Setiap pembaruan data di salah satu perangkat akan langsung otomatis ter-update di seluruh perangkat lain!', 'success');
+      }, 800);
+    } catch (err) {
+      Swal.fire('Koneksi Gagal', err.message, 'error');
+    }
   },
 
   async testGasConnection() {
@@ -1498,6 +1587,10 @@ const App = {
     if (compPhone) compPhone.value = this.settings.companyPhone || '';
     const gasUrl = document.getElementById('settingGasUrl');
     if (gasUrl) gasUrl.value = this.settings.gasWebhookUrl || '';
+    const fbInput = document.getElementById('settingFirebaseConfig');
+    if (fbInput && this.settings.firebaseConfig) {
+      fbInput.value = JSON.stringify(this.settings.firebaseConfig, null, 2);
+    }
   }
 };
 

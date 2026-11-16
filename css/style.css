@@ -408,3 +408,58 @@ body {
 [data-theme="dark"] .text-dark {
   color: #f1f5f9 !important;
 }
+
+/* Cloud Sync Status Indicator */
+.cloud-status-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 20px;
+  transition: var(--transition);
+  user-select: none;
+}
+
+.cloud-status-badge:hover {
+  opacity: 0.9;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-green {
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+  animation: pulse-dot 2s infinite ease-in-out;
+}
+
+.dot-yellow {
+  background-color: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.7);
+}
+
+.dot-gray {
+  background-color: #94a3b8;
+}
+
+.dot-red {
+  background-color: #ef4444;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+@keyframes spin-icon {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  display: inline-block;
+  animation: spin-icon 0.8s linear infinite;
+}
